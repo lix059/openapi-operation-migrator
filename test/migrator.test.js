@@ -340,6 +340,20 @@ test('Markdown report includes source locations and escapes table content', asyn
   assert.match(escaped, /GET \/a\\\|b/);
 });
 
+test('SARIF and GitHub formats locate pending calls at repository-relative paths', async () => {
+  const { dir, src, old, next } = await fixture();
+  await writeFile(join(src, 'users.ts'), "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  const args = [cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api', '--repo-root', dir];
+  const sarif = JSON.parse((await execFileAsync(process.execPath, [...args, '--sarif'])).stdout);
+  assert.equal(sarif.version, '2.1.0');
+  assert.equal(sarif.runs[0].tool.driver.name, 'openapi-operation-migrator');
+  assert.equal(sarif.runs[0].results[0].ruleId, 'opid/rename-call');
+  assert.equal(sarif.runs[0].results[0].locations[0].physicalLocation.artifactLocation.uri, 'src/users.ts');
+  assert.equal(sarif.runs[0].results[0].locations[0].physicalLocation.region.startLine, 2);
+  const annotations = (await execFileAsync(process.execPath, [...args, '--github'])).stdout;
+  assert.match(annotations, /^::warning file=src\/users\.ts,line=2,title=OpenAPI operation migration::Rename listUsersOld to listUsers/m);
+});
+
 test('check mode fails on ambiguous IDs but accepts an unchanged generated method name', async () => {
   const { dir, src, old, next } = await fixture();
   const oldText = await readFile(old, 'utf8');

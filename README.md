@@ -58,6 +58,9 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--check` | Check for pending calls and set a CI-friendly exit code |
 | `--json` | Emit machine-readable report |
 | `--markdown` | Emit a Markdown report; cannot be combined with `--json` |
+| `--sarif` | Emit SARIF 2.1.0 diagnostics for code scanning |
+| `--github` | Emit GitHub Actions workflow annotations |
+| `--repo-root DIR` | Repository root for SARIF/annotations; defaults to current directory |
 
 An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Namespace imports are supported too: `import * as Service from '@/api'` followed by `Service.AdminApi.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported. The scanner uses import bindings, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
 
@@ -83,6 +86,8 @@ Use `--method-map method-map.json`. IDs absent from the map keep their original 
 - Only method calls on the configured named or namespace import are edited. Dynamic computed properties and indirect aliases are outside this release. Re-export paths must be declared explicitly with repeated `--client-import` options.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
 - Preview first, run on a clean Git working tree, and review the diff after `--write`.
+
+For CI diagnostics, run from the repository root (or pass `--repo-root`) and select one output format. `--sarif > migration.sarif` creates a file compatible with GitHub's SARIF upload action; `--github` prints workflow warnings and errors directly. Both keep the normal `--check` exit status. SARIF upload requires a separate workflow step and the repository's code scanning permissions.
 
 ## Development
 

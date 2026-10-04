@@ -2,7 +2,7 @@
 import { resolve } from 'node:path';
 import { loadOperations, loadMethodMap, compareOperations } from './spec.js';
 import { migrateSources } from './scan.js';
-import { formatMarkdown } from './report.js';
+import { formatGitHubAnnotations, formatMarkdown, formatSarif } from './report.js';
 
 const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --client-import @/api [options]
 
@@ -15,6 +15,9 @@ Options:
   --check               Exit 3 if method usages still need migration; for CI
   --json                Print machine-readable JSON
   --markdown            Print a Markdown report for pull requests
+  --sarif               Print SARIF 2.1.0 diagnostics
+  --github              Print GitHub Actions workflow annotations
+  --repo-root DIR       Repository root for SARIF/annotations (default: cwd)
   --help                Show this help
 
 Only calls on the configured named or namespace import are changed.
@@ -22,16 +25,16 @@ Operations are matched by HTTP method and path. Review generated API code before
 `;
 
 function parseArgs(argv) {
-  const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false, allowRemoteRefs: false };
+  const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false, sarif: false, github: false, allowRemoteRefs: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-export', 'clientExport'],
-    ['--method-map', 'methodMap']
+    ['--method-map', 'methodMap'], ['--repo-root', 'repoRoot']
   ]);
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help') return { help: true };
-    if (['--write', '--check', '--json', '--markdown', '--allow-remote-refs'].includes(arg)) {
+    if (['--write', '--check', '--json', '--markdown', '--sarif', '--github', '--allow-remote-refs'].includes(arg)) {
       options[arg === '--allow-remote-refs' ? 'allowRemoteRefs' : arg.slice(2)] = true;
     } else if (arg === '--client-import') {
       const value = argv[++index];
@@ -48,11 +51,14 @@ function parseArgs(argv) {
   for (const key of ['old', 'new', 'src']) if (!options[key]) throw new Error(`Missing --${key}`);
   if (!options.clientImports?.length) throw new Error('Missing --client-import');
   if (options.write && options.check) throw new Error('--write and --check cannot be combined');
-  if (options.json && options.markdown) throw new Error('--json and --markdown cannot be combined');
+  if ([options.json, options.markdown, options.sarif, options.github].filter(Boolean).length > 1) {
+    throw new Error('Choose only one output format: --json, --markdown, --sarif, or --github');
+  }
   options.old = resolve(options.old);
   options.new = resolve(options.new);
   options.src = resolve(options.src);
   if (options.methodMap) options.methodMap = resolve(options.methodMap);
+  options.repoRoot = resolve(options.repoRoot ?? process.cwd());
   return options;
 }
 
@@ -68,10 +74,15 @@ async function main() {
   const changes = compareOperations(oldSpec, newSpec, methodMap);
   const scan = await migrateSources(options, changes);
   const report = { mode: options.write ? 'write' : options.check ? 'check' : 'preview', changes, ...scan };
+  const context = { src: options.src, newSpec: options.new, repoRoot: options.repoRoot };
   if (options.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else if (options.markdown) {
     process.stdout.write(formatMarkdown(report));
+  } else if (options.sarif) {
+    process.stdout.write(`${JSON.stringify(formatSarif(report, context), null, 2)}\n`);
+  } else if (options.github) {
+    process.stdout.write(formatGitHubAnnotations(report, context));
   } else {
     process.stdout.write(`${changes.length} operationId change(s), ${scan.matches.length} call site(s), ${scan.manualMatches.length} manual reference(s), ${scan.scannedFiles} file(s) scanned, ${scan.appliedFiles} file(s) written.\n`);
     for (const change of changes) {
