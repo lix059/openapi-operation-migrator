@@ -7,6 +7,7 @@ import { formatMarkdown } from './report.js';
 const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --client-import @/api [options]
 
 Options:
+  --client-import NAME  Allowed import path; repeat for barrels/re-exports
   --client-export NAME  Named export containing the API methods (default: AdminApi)
   --method-map FILE     JSON map from operationId to generated method name
   --write               Apply safe call-site renames (default: preview only)
@@ -23,7 +24,7 @@ function parseArgs(argv) {
   const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
-    ['--client-import', 'clientImport'], ['--client-export', 'clientExport'],
+    ['--client-export', 'clientExport'],
     ['--method-map', 'methodMap']
   ]);
   for (let index = 0; index < argv.length; index++) {
@@ -31,6 +32,10 @@ function parseArgs(argv) {
     if (arg === '--help') return { help: true };
     if (arg === '--write' || arg === '--check' || arg === '--json' || arg === '--markdown') {
       options[arg.slice(2)] = true;
+    } else if (arg === '--client-import') {
+      const value = argv[++index];
+      if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`);
+      (options.clientImports ??= []).push(value);
     } else if (valued.has(arg)) {
       const value = argv[++index];
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`);
@@ -39,9 +44,8 @@ function parseArgs(argv) {
       throw new Error(`Unknown option: ${arg}`);
     }
   }
-  for (const key of ['old', 'new', 'src', 'clientImport']) {
-    if (!options[key]) throw new Error(`Missing --${key === 'clientImport' ? 'client-import' : key}`);
-  }
+  for (const key of ['old', 'new', 'src']) if (!options[key]) throw new Error(`Missing --${key}`);
+  if (!options.clientImports?.length) throw new Error('Missing --client-import');
   if (options.write && options.check) throw new Error('--write and --check cannot be combined');
   if (options.json && options.markdown) throw new Error('--json and --markdown cannot be combined');
   options.old = resolve(options.old);

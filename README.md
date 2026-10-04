@@ -50,7 +50,7 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--old FILE` | Previous OpenAPI 3 JSON or YAML document |
 | `--new FILE` | New OpenAPI 3 JSON or YAML document |
 | `--src DIR` | Source tree to inspect |
-| `--client-import NAME` | Exact module specifier used in source imports |
+| `--client-import NAME` | Exact module specifier used in source imports; repeat for multiple paths |
 | `--client-export NAME` | Named export with methods; defaults to `AdminApi` |
 | `--method-map FILE` | Optional JSON map from operation IDs to generated method names |
 | `--write` | Apply safe renames; omitted by default |
@@ -59,6 +59,8 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--markdown` | Emit a Markdown report; cannot be combined with `--json` |
 
 An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Namespace imports are supported too: `import * as Service from '@/api'` followed by `Service.AdminApi.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported. The scanner uses import bindings, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
+
+For an explicit barrel import, repeat the import option: `--client-import '@/api' --client-import '@/api/barrel'`. This declares both paths as trusted sources of the same `--client-export`; the tool does not inspect the barrel's re-export chain.
 
 If your generator changes operation IDs into different method names, pass a map covering the old and new IDs:
 
@@ -77,7 +79,7 @@ Use `--method-map method-map.json`. IDs absent from the map keep their original 
 - Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
 - Local path-item references are resolved. External and circular path-item references fail explicitly.
 - Duplicated or reused `operationId` values are reported as manual changes.
-- Only method calls on the configured named or namespace import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
+- Only method calls on the configured named or namespace import are edited. Dynamic computed properties and indirect aliases are outside this release. Re-export paths must be declared explicitly with repeated `--client-import` options.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
 - Preview first, run on a clean Git working tree, and review the diff after `--write`.
 

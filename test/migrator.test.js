@@ -103,6 +103,27 @@ function shadow(Service) { Service.AdminApi.listUsersOld(); }
   assert.match(updated, /function shadow\(Service\) \{ Service\.AdminApi\.listUsersOld\(\); \}/);
 });
 
+test('repeated client import paths include explicit barrels without matching other modules', async () => {
+  const { src, old, next } = await fixture();
+  const file = join(src, 'users.ts');
+  await writeFile(file, `import { AdminApi as Direct } from '@/api';
+import { AdminApi as Barrel } from '@/api/barrel';
+import { AdminApi as Other } from '@/other';
+Direct.listUsersOld();
+Barrel.listUsersOld();
+Other.listUsersOld();
+`);
+  const { stdout } = await execFileAsync(process.execPath, [
+    cli, '--old', old, '--new', next, '--src', src,
+    '--client-import', '@/api', '--client-import', '@/api/barrel', '--write', '--json'
+  ]);
+  assert.equal(JSON.parse(stdout).matches.length, 2);
+  const updated = await readFile(file, 'utf8');
+  assert.match(updated, /Direct\.listUsers\(\)/);
+  assert.match(updated, /Barrel\.listUsers\(\)/);
+  assert.match(updated, /Other\.listUsersOld\(\)/);
+});
+
 test('write aborts all files when a source file cannot be parsed', async () => {
   const { src, old, next } = await fixture();
   const valid = join(src, 'valid.ts');

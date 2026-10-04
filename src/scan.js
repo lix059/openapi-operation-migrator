@@ -28,6 +28,7 @@ function scriptParts(filename, source) {
 }
 
 function findUsages(code, offset, options, renames) {
+  const clientImports = new Set(options.clientImports ?? [options.clientImport]);
   const ast = parseJs(code, {
     sourceType: 'unambiguous',
     plugins: ['typescript', 'jsx', 'decorators-legacy']
@@ -40,7 +41,7 @@ function findUsages(code, offset, options, renames) {
       if (!binding?.path.isImportSpecifier()) return false;
       const importNode = binding.path.parentPath.node;
       const imported = binding.path.node.imported;
-      return importNode.source.value === options.clientImport
+      return clientImports.has(importNode.source.value)
         && (imported.name ?? imported.value) === options.clientExport;
     }
     if (!['MemberExpression', 'OptionalMemberExpression'].includes(object.type)) return false;
@@ -53,7 +54,7 @@ function findUsages(code, offset, options, renames) {
     if (exportName !== options.clientExport) return false;
     const binding = path.scope.getBinding(object.object.name);
     return Boolean(binding?.path.isImportNamespaceSpecifier()
-      && binding.path.parentPath.node.source.value === options.clientImport);
+      && clientImports.has(binding.path.parentPath.node.source.value));
   }
   function inspectMember(path) {
     const member = path.node;

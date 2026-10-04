@@ -12,11 +12,12 @@ This project focuses on a specific problem: a generated API method changes name 
 - Resolve local path-item references and fail explicitly on external or circular references.
 - Support namespace imports with binding-aware analysis.
 - Produce a Markdown report with source locations for pull requests and build artifacts.
+- Accept multiple explicit client import paths for projects using barrel re-exports.
 
 ## Next priorities
 
 1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
-2. **More import shapes:** support re-exports and indirect aliases with binding-aware analysis, while keeping unrelated or shadowed names untouched.
+2. **More import shapes:** resolve barrel re-export chains and indirect aliases with binding-aware analysis, while keeping unrelated or shadowed names untouched.
 3. **External OpenAPI references:** load referenced documents with a clear base path and cycle policy.
 4. **CI output:** produce SARIF diagnostics and optional pull-request annotations.
 
