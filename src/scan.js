@@ -39,8 +39,8 @@ function findUsages(code, offset, options, renames) {
     if (member.object.type !== 'Identifier') return;
     if (member.computed && member.property.type !== 'StringLiteral') return;
     if (!member.computed && member.property.type !== 'Identifier') return;
-    const oldId = member.computed ? member.property.value : member.property.name;
-    const change = renames.get(oldId);
+    const oldMethod = member.computed ? member.property.value : member.property.name;
+    const change = renames.get(oldMethod);
     if (!change) return;
 
     const binding = path.scope.getBinding(member.object.name);
@@ -53,8 +53,10 @@ function findUsages(code, offset, options, renames) {
     const usage = {
       start: offset + member.property.start + (member.computed ? 1 : 0),
       end: offset + member.property.end - (member.computed ? 1 : 0),
-      oldId,
+      oldId: change.oldId,
       newId: change.newId,
+      oldMethod,
+      newMethod: change.newMethod,
       endpoint: change.endpoint
     };
     const parent = path.parentPath;
@@ -72,7 +74,7 @@ function findUsages(code, offset, options, renames) {
 }
 
 export async function migrateSources(options, changes) {
-  const renames = new Map(changes.filter(change => !change.reason).map(change => [change.oldId, change]));
+  const renames = new Map(changes.filter(change => !change.reason).map(change => [change.oldMethod, change]));
   const files = await sourceFiles(options.src);
   const matches = [];
   const manualMatches = [];
@@ -95,6 +97,8 @@ export async function migrateSources(options, changes) {
         line: source.slice(0, usage.start).split('\n').length,
         oldId: usage.oldId,
         newId: usage.newId,
+        oldMethod: usage.oldMethod,
+        newMethod: usage.newMethod,
         endpoint: usage.endpoint,
         reason: 'method reference is not a direct call'
       });
@@ -107,12 +111,14 @@ export async function migrateSources(options, changes) {
         line: before.split('\n').length,
         oldId: edit.oldId,
         newId: edit.newId,
+        oldMethod: edit.oldMethod,
+        newMethod: edit.newMethod,
         endpoint: edit.endpoint
       });
     }
     let updated = source;
     for (const edit of edits.sort((a, b) => b.start - a.start)) {
-      updated = updated.slice(0, edit.start) + edit.newId + updated.slice(edit.end);
+      updated = updated.slice(0, edit.start) + edit.newMethod + updated.slice(edit.end);
     }
     pendingWrites.push({ filename, updated });
   }

@@ -8,10 +8,11 @@ This project focuses on a specific problem: a generated API method changes name 
 - Preview and rewrite direct calls on a configured named import in TypeScript, JavaScript, and Vue source.
 - Report ambiguous IDs and indirect method references for manual review.
 - Stop all writes if a source file fails to parse; provide `--check` for CI.
+- Accept an explicit operation ID to generated method map for generators that rename methods.
 
 ## Next priorities
 
-1. **Generator naming rules:** support an explicit operation ID to generated method map. Different generators can transform an `operationId`, so the current equality assumption should be configurable before claiming broad generator support.
+1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
 2. **More import shapes:** support namespace imports and re-exports with binding-aware analysis, while keeping unrelated or shadowed names untouched.
 3. **OpenAPI references:** resolve local path-item references and report unsupported external references explicitly.
 4. **CI output:** produce a compact Markdown or SARIF report with source locations, suitable for pull requests.

@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { compareOperations, loadOperations } from '../src/spec.js';
+import { compareOperations, loadMethodMap, loadOperations } from '../src/spec.js';
 import { migrateSources } from '../src/scan.js';
 
 const execFileAsync = promisify(execFile);
@@ -107,6 +107,42 @@ test('reused operationId is reported for manual review', () => {
   const changes = compareOperations(oldSpec, newSpec);
   assert.equal(changes.length, 2);
   assert.ok(changes.every(change => change.reason));
+});
+
+test('method map connects generator-specific names to operation IDs', async () => {
+  const { dir, src, old, next } = await fixture();
+  const oldText = await readFile(old, 'utf8');
+  const nextText = await readFile(next, 'utf8');
+  await writeFile(old, oldText.replace('listUsersOld', 'list_users_old'));
+  await writeFile(next, nextText.replace('listUsers', 'list_users'));
+  const mapFile = join(dir, 'method-map.json');
+  await writeFile(mapFile, JSON.stringify({ list_users_old: 'listUsersOld', list_users: 'listUsers' }));
+  const file = join(src, 'users.ts');
+  await writeFile(file, "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  const methodMap = await loadMethodMap(mapFile);
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next), methodMap);
+  assert.equal(changes[0].oldMethod, 'listUsersOld');
+  assert.equal(changes[0].newMethod, 'listUsers');
+  const { stdout } = await execFileAsync(process.execPath, [
+    cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api',
+    '--method-map', mapFile, '--write', '--json'
+  ]);
+  assert.equal(JSON.parse(stdout).appliedFiles, 1);
+  assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsers\(\)/);
+});
+
+test('colliding mapped method names require manual review', () => {
+  const oldSpec = {
+    operations: new Map([['GET /a', 'alpha'], ['GET /b', 'beta']]),
+    ids: new Map([['alpha', 1], ['beta', 1]])
+  };
+  const newSpec = {
+    operations: new Map([['GET /a', 'gamma'], ['GET /b', 'beta']]),
+    ids: new Map([['gamma', 1], ['beta', 1]])
+  };
+  const map = new Map([['alpha', 'same'], ['beta', 'same'], ['gamma', 'newName']]);
+  const changes = compareOperations(oldSpec, newSpec, map);
+  assert.match(changes[0].reason, /shared/);
 });
 
 test('CLI returns a JSON report and leaves source untouched by default', async () => {

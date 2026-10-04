@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 import { resolve } from 'node:path';
-import { loadOperations, compareOperations } from './spec.js';
+import { loadOperations, loadMethodMap, compareOperations } from './spec.js';
 import { migrateSources } from './scan.js';
 
 const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --client-import @/api [options]
 
 Options:
   --client-export NAME  Named export containing the API methods (default: AdminApi)
+  --method-map FILE     JSON map from operationId to generated method name
   --write               Apply safe call-site renames (default: preview only)
   --check               Exit 3 if method usages still need migration; for CI
   --json                Print machine-readable JSON
@@ -20,7 +21,8 @@ function parseArgs(argv) {
   const options = { clientExport: 'AdminApi', write: false, check: false, json: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
-    ['--client-import', 'clientImport'], ['--client-export', 'clientExport']
+    ['--client-import', 'clientImport'], ['--client-export', 'clientExport'],
+    ['--method-map', 'methodMap']
   ]);
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -42,6 +44,7 @@ function parseArgs(argv) {
   options.old = resolve(options.old);
   options.new = resolve(options.new);
   options.src = resolve(options.src);
+  if (options.methodMap) options.methodMap = resolve(options.methodMap);
   return options;
 }
 
@@ -53,7 +56,8 @@ async function main() {
   }
   const oldSpec = await loadOperations(options.old);
   const newSpec = await loadOperations(options.new);
-  const changes = compareOperations(oldSpec, newSpec);
+  const methodMap = options.methodMap ? await loadMethodMap(options.methodMap) : new Map();
+  const changes = compareOperations(oldSpec, newSpec, methodMap);
   const scan = await migrateSources(options, changes);
   const report = { mode: options.write ? 'write' : options.check ? 'check' : 'preview', changes, ...scan };
   if (options.json) {
@@ -61,13 +65,16 @@ async function main() {
   } else {
     process.stdout.write(`${changes.length} operationId change(s), ${scan.matches.length} call site(s), ${scan.manualMatches.length} manual reference(s), ${scan.scannedFiles} file(s) scanned, ${scan.appliedFiles} file(s) written.\n`);
     for (const change of changes) {
-      process.stdout.write(`${change.endpoint}: ${change.oldId} -> ${change.newId}${change.reason ? ` [manual: ${change.reason}]` : ''}\n`);
+      const methodLabel = change.oldId !== change.oldMethod || change.newId !== change.newMethod
+        ? ` (client: ${change.oldMethod} -> ${change.newMethod})`
+        : '';
+      process.stdout.write(`${change.endpoint}: ${change.oldId} -> ${change.newId}${methodLabel}${change.reason ? ` [manual: ${change.reason}]` : ''}\n`);
     }
     for (const match of scan.matches) {
-      process.stdout.write(`  ${match.file}:${match.line} ${match.oldId} -> ${match.newId}\n`);
+      process.stdout.write(`  ${match.file}:${match.line} ${match.oldMethod} -> ${match.newMethod}\n`);
     }
     for (const match of scan.manualMatches) {
-      process.stdout.write(`  ${match.file}:${match.line} ${match.oldId} -> ${match.newId} [manual: ${match.reason}]\n`);
+      process.stdout.write(`  ${match.file}:${match.line} ${match.oldMethod} -> ${match.newMethod} [manual: ${match.reason}]\n`);
     }
     for (const error of scan.errors) process.stderr.write(`Skipped ${error.file}: ${error.message}\n`);
     if (options.write && scan.errors.length) process.stderr.write('No files written because some files could not be parsed.\n');

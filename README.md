@@ -50,15 +50,28 @@ opid-migrate \
 | `--src DIR` | Source tree to inspect |
 | `--client-import NAME` | Exact module specifier used in source imports |
 | `--client-export NAME` | Named export with methods; defaults to `AdminApi` |
+| `--method-map FILE` | Optional JSON map from operation IDs to generated method names |
 | `--write` | Apply safe renames; omitted by default |
 | `--check` | Check for pending calls and set a CI-friendly exit code |
 | `--json` | Emit machine-readable report |
 
 An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported too. The scanner uses the import binding, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
 
+If your generator changes operation IDs into different method names, pass a map covering the old and new IDs:
+
+```json
+{
+  "list_users_old": "listUsersOld",
+  "list_users": "listUsers"
+}
+```
+
+Use `--method-map method-map.json`. IDs absent from the map keep their original names. The tool reports method-name collisions for manual review.
+
 ## Safety boundaries
 
 - Operations are paired by the same HTTP method and path. Path or method migrations require manual review.
+- Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
 - Duplicated or reused `operationId` values are reported as manual changes.
 - Only method calls on the configured named import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
