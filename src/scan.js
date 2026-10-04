@@ -27,52 +27,77 @@ function scriptParts(filename, source) {
     .map(block => ({ code: block.content, offset: block.loc.start.offset }));
 }
 
-function findCalls(code, offset, options, renames) {
+function findUsages(code, offset, options, renames) {
   const ast = parseJs(code, {
     sourceType: 'unambiguous',
     plugins: ['typescript', 'jsx', 'decorators-legacy']
   });
   const edits = [];
-  traverse(ast, {
-    CallExpression(path) {
-      const callee = path.node.callee;
-      if (callee.type !== 'MemberExpression' || callee.computed || callee.object.type !== 'Identifier') return;
-      const oldId = callee.property.name;
-      const change = renames.get(oldId);
-      if (!change) return;
+  const manual = [];
+  function inspectMember(path) {
+    const member = path.node;
+    if (member.object.type !== 'Identifier') return;
+    if (member.computed && member.property.type !== 'StringLiteral') return;
+    if (!member.computed && member.property.type !== 'Identifier') return;
+    const oldId = member.computed ? member.property.value : member.property.name;
+    const change = renames.get(oldId);
+    if (!change) return;
 
-      const binding = path.scope.getBinding(callee.object.name);
-      if (!binding || !binding.path.isImportSpecifier()) return;
-      const importNode = binding.path.parentPath.node;
-      if (importNode.source.value !== options.clientImport) return;
-      const imported = binding.path.node.imported;
-      if ((imported.name ?? imported.value) !== options.clientExport) return;
+    const binding = path.scope.getBinding(member.object.name);
+    if (!binding || !binding.path.isImportSpecifier()) return;
+    const importNode = binding.path.parentPath.node;
+    if (importNode.source.value !== options.clientImport) return;
+    const imported = binding.path.node.imported;
+    if ((imported.name ?? imported.value) !== options.clientExport) return;
 
-      edits.push({
-        start: offset + callee.property.start,
-        end: offset + callee.property.end,
-        oldId,
-        newId: change.newId,
-        endpoint: change.endpoint
-      });
+    const usage = {
+      start: offset + member.property.start + (member.computed ? 1 : 0),
+      end: offset + member.property.end - (member.computed ? 1 : 0),
+      oldId,
+      newId: change.newId,
+      endpoint: change.endpoint
+    };
+    const parent = path.parentPath;
+    if ((parent.isCallExpression() || parent.isOptionalCallExpression()) && parent.node.callee === member) {
+      edits.push(usage);
+    } else {
+      manual.push(usage);
     }
+  }
+  traverse(ast, {
+    MemberExpression: inspectMember,
+    OptionalMemberExpression: inspectMember
   });
-  return edits;
+  return { edits, manual };
 }
 
 export async function migrateSources(options, changes) {
   const renames = new Map(changes.filter(change => !change.reason).map(change => [change.oldId, change]));
   const files = await sourceFiles(options.src);
   const matches = [];
+  const manualMatches = [];
   const errors = [];
+  const pendingWrites = [];
   for (const filename of files) {
     const source = await readFile(filename, 'utf8');
-    let edits;
+    let usages;
     try {
-      edits = scriptParts(filename, source).flatMap(part => findCalls(part.code, part.offset, options, renames));
+      usages = scriptParts(filename, source).map(part => findUsages(part.code, part.offset, options, renames));
     } catch (error) {
       errors.push({ file: relative(options.src, filename), message: error.message });
       continue;
+    }
+    const edits = usages.flatMap(usage => usage.edits);
+    const manual = usages.flatMap(usage => usage.manual);
+    for (const usage of manual) {
+      manualMatches.push({
+        file: relative(options.src, filename),
+        line: source.slice(0, usage.start).split('\n').length,
+        oldId: usage.oldId,
+        newId: usage.newId,
+        endpoint: usage.endpoint,
+        reason: 'method reference is not a direct call'
+      });
     }
     if (!edits.length) continue;
     for (const edit of edits) {
@@ -85,13 +110,20 @@ export async function migrateSources(options, changes) {
         endpoint: edit.endpoint
       });
     }
-    if (options.write) {
-      let updated = source;
-      for (const edit of edits.sort((a, b) => b.start - a.start)) {
-        updated = updated.slice(0, edit.start) + edit.newId + updated.slice(edit.end);
-      }
-      await writeFile(filename, updated);
+    let updated = source;
+    for (const edit of edits.sort((a, b) => b.start - a.start)) {
+      updated = updated.slice(0, edit.start) + edit.newId + updated.slice(edit.end);
     }
+    pendingWrites.push({ filename, updated });
   }
-  return { matches, errors, scannedFiles: files.length };
+  if (options.write && !errors.length) {
+    for (const { filename, updated } of pendingWrites) await writeFile(filename, updated);
+  }
+  return {
+    matches,
+    manualMatches,
+    errors,
+    scannedFiles: files.length,
+    appliedFiles: options.write && !errors.length ? pendingWrites.length : 0
+  };
 }

@@ -1,0 +1,19 @@
+# Roadmap
+
+This project focuses on a specific problem: a generated API method changes name after an OpenAPI `operationId` change. General contract diffing is already handled by tools such as oasdiff.
+
+## Current release
+
+- Match operations by HTTP method and path in OpenAPI 3 JSON/YAML documents.
+- Preview and rewrite direct calls on a configured named import in TypeScript, JavaScript, and Vue source.
+- Report ambiguous IDs and indirect method references for manual review.
+- Stop all writes if a source file fails to parse; provide `--check` for CI.
+
+## Next priorities
+
+1. **Generator naming rules:** support an explicit operation ID to generated method map. Different generators can transform an `operationId`, so the current equality assumption should be configurable before claiming broad generator support.
+2. **More import shapes:** support namespace imports and re-exports with binding-aware analysis, while keeping unrelated or shadowed names untouched.
+3. **OpenAPI references:** resolve local path-item references and report unsupported external references explicitly.
+4. **CI output:** produce a compact Markdown or SARIF report with source locations, suitable for pull requests.
+
+Each compatibility addition should include a small synthetic fixture that fails before the change and passes afterward. Feature requests are most useful when they include the generator, the import statement, an old call, and the expected new call.

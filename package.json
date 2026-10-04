@@ -20,5 +20,5 @@
     "yaml": "^2.8.0"
   },
   "license": "MIT",
-  "files": ["src", "README.md", "LICENSE"]
+  "files": ["src", "README.md", "ROADMAP.md", "CONTRIBUTING.md", "LICENSE"]
 }

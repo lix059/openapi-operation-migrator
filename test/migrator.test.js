@@ -41,8 +41,11 @@ test('preview and write update only direct calls on the requested named import',
   const { src, old, next } = await fixture();
   const ts = join(src, 'users.ts');
   const vue = join(src, 'Users.vue');
-  const original = `import { AdminApi as Api } from '@/api';
+const original = `import { AdminApi as Api } from '@/api';
 const rows = Api.listUsersOld();
+const optional = Api?.listUsersOld?.();
+const bracket = Api['listUsersOld']();
+const callback = Api.listUsersOld;
 const unrelated = other.listUsersOld();
 function shadow(Api) { return Api.listUsersOld(); }
 const mention = 'Api.listUsersOld()';
@@ -57,20 +60,39 @@ await AdminApi.listUsersOld();
   const changes = compareOperations(await loadOperations(old), await loadOperations(next));
   const options = { src, clientImport: '@/api', clientExport: 'AdminApi', write: false };
   const preview = await migrateSources(options, changes);
-  assert.equal(preview.matches.length, 2);
+  assert.equal(preview.matches.length, 4);
+  assert.equal(preview.manualMatches.length, 1);
   assert.deepEqual(preview.errors, []);
   assert.equal(await readFile(ts, 'utf8'), original);
 
   const result = await migrateSources({ ...options, write: true }, changes);
-  assert.equal(result.matches.length, 2);
+  assert.equal(result.matches.length, 4);
+  assert.equal(result.appliedFiles, 2);
   const updatedTs = await readFile(ts, 'utf8');
   assert.match(updatedTs, /Api\.listUsers\(\)/);
+  assert.match(updatedTs, /Api\?\.listUsers\?\.\(\)/);
+  assert.match(updatedTs, /Api\['listUsers'\]\(\)/);
+  assert.match(updatedTs, /const callback = Api\.listUsersOld;/);
   assert.match(updatedTs, /other\.listUsersOld\(\)/);
   assert.match(updatedTs, /function shadow\(Api\) \{ return Api\.listUsersOld\(\); \}/);
   assert.match(updatedTs, /'Api\.listUsersOld\(\)'/);
   const updatedVue = await readFile(vue, 'utf8');
   assert.match(updatedVue, /await AdminApi\.listUsers\(\)/);
   assert.match(updatedVue, /<div>listUsersOld<\/div>/);
+});
+
+test('write aborts all files when a source file cannot be parsed', async () => {
+  const { src, old, next } = await fixture();
+  const valid = join(src, 'valid.ts');
+  await writeFile(valid, "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  await writeFile(join(src, 'invalid.ts'), "import { AdminApi } from '@/api';\nconst broken = ;\n");
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  const result = await migrateSources({
+    src, clientImport: '@/api', clientExport: 'AdminApi', write: true
+  }, changes);
+  assert.equal(result.errors.length, 1);
+  assert.equal(result.appliedFiles, 0);
+  assert.match(await readFile(valid, 'utf8'), /AdminApi\.listUsersOld\(\)/);
 });
 
 test('reused operationId is reported for manual review', () => {
@@ -99,4 +121,51 @@ test('CLI returns a JSON report and leaves source untouched by default', async (
   assert.equal(report.mode, 'preview');
   assert.equal(report.matches[0].line, 2);
   assert.equal(await readFile(file, 'utf8'), source);
+});
+
+test('check mode reports pending calls with exit code 3 and never writes', async () => {
+  const { src, old, next } = await fixture();
+  const file = join(src, 'users.ts');
+  const source = "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n";
+  await writeFile(file, source);
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api', '--check', '--json'
+    ]),
+    error => {
+      assert.equal(error.code, 3);
+      assert.equal(JSON.parse(error.stdout).matches.length, 1);
+      return true;
+    }
+  );
+  assert.equal(await readFile(file, 'utf8'), source);
+});
+
+test('check mode also reports a method reference that needs manual review', async () => {
+  const { src, old, next } = await fixture();
+  await writeFile(join(src, 'users.ts'), "import { AdminApi } from '@/api';\nconst load = AdminApi.listUsersOld;\n");
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api', '--check', '--json'
+    ]),
+    error => {
+      assert.equal(error.code, 3);
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.matches.length, 0);
+      assert.equal(report.manualMatches.length, 1);
+      return true;
+    }
+  );
+});
+
+test('CLI write followed by check passes once direct calls are migrated', async () => {
+  const { src, old, next } = await fixture();
+  const file = join(src, 'users.ts');
+  await writeFile(file, "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  const args = [cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api'];
+  const write = await execFileAsync(process.execPath, [...args, '--write', '--json']);
+  assert.equal(JSON.parse(write.stdout).appliedFiles, 1);
+  assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsers\(\)/);
+  const check = await execFileAsync(process.execPath, [...args, '--check', '--json']);
+  assert.equal(JSON.parse(check.stdout).matches.length, 0);
 });

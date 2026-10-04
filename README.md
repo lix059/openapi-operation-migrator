@@ -28,6 +28,19 @@ Review the report and the newly generated client method, then add `--write`. Run
 
 Install from this repository with `npm install -g .` to use `opid-migrate` as a command. For automation, add `--json` to get the report as JSON.
 
+To fail a CI step when matching method usages still use old names, use `--check`. It exits 3 when migration is pending, 2 when a source file cannot be parsed, and 1 for invalid input or another fatal error. A clean check exits 0. `--check` never edits files and cannot be combined with `--write`.
+
+For example, after your own API generation step in CI:
+
+```sh
+opid-migrate \
+  --old api/previous.yaml \
+  --new api/current.yaml \
+  --src src \
+  --client-import '@/api' \
+  --check
+```
+
 ## Options
 
 | Option | Purpose |
@@ -38,15 +51,16 @@ Install from this repository with `npm install -g .` to use `opid-migrate` as a 
 | `--client-import NAME` | Exact module specifier used in source imports |
 | `--client-export NAME` | Named export with methods; defaults to `AdminApi` |
 | `--write` | Apply safe renames; omitted by default |
+| `--check` | Check for pending calls and set a CI-friendly exit code |
 | `--json` | Emit machine-readable report |
 
-An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. The scanner uses the import binding, so calls on unrelated objects and locally shadowed names are left alone. Parse errors are reported as skipped files and give the process exit code 2.
+An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported too. The scanner uses the import binding, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
 
 ## Safety boundaries
 
 - Operations are paired by the same HTTP method and path. Path or method migrations require manual review.
 - Duplicated or reused `operationId` values are reported as manual changes.
-- Only direct method calls on the configured named import are edited. Computed properties, optional calls, re-exports, and indirect aliases are outside this first release.
+- Only method calls on the configured named import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
 - Preview first, run on a clean Git working tree, and review the diff after `--write`.
 
@@ -58,4 +72,4 @@ npm run check
 npm test
 ```
 
-Issues and small reproducible examples are welcome. Use synthetic API schemas and source files when reporting bugs; avoid posting private application code or credentials.
+See [ROADMAP.md](ROADMAP.md) for planned compatibility work and [CONTRIBUTING.md](CONTRIBUTING.md) for reporting or contributing. Use synthetic API schemas and source files when reporting bugs; avoid posting private application code or credentials.

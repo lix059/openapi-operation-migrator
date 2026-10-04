@@ -8,15 +8,16 @@ const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --cl
 Options:
   --client-export NAME  Named export containing the API methods (default: AdminApi)
   --write               Apply safe call-site renames (default: preview only)
+  --check               Exit 3 if method usages still need migration; for CI
   --json                Print machine-readable JSON
   --help                Show this help
 
-Only direct calls on a named import are changed, for example AdminApi.oldMethod().
+Only calls on a named import are changed, for example AdminApi.oldMethod().
 Operations are matched by HTTP method and path. Review generated API code before --write.
 `;
 
 function parseArgs(argv) {
-  const options = { clientExport: 'AdminApi', write: false, json: false };
+  const options = { clientExport: 'AdminApi', write: false, check: false, json: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-import', 'clientImport'], ['--client-export', 'clientExport']
@@ -24,7 +25,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help') return { help: true };
-    if (arg === '--write' || arg === '--json') {
+    if (arg === '--write' || arg === '--check' || arg === '--json') {
       options[arg.slice(2)] = true;
     } else if (valued.has(arg)) {
       const value = argv[++index];
@@ -37,6 +38,7 @@ function parseArgs(argv) {
   for (const key of ['old', 'new', 'src', 'clientImport']) {
     if (!options[key]) throw new Error(`Missing --${key === 'clientImport' ? 'client-import' : key}`);
   }
+  if (options.write && options.check) throw new Error('--write and --check cannot be combined');
   options.old = resolve(options.old);
   options.new = resolve(options.new);
   options.src = resolve(options.src);
@@ -53,21 +55,26 @@ async function main() {
   const newSpec = await loadOperations(options.new);
   const changes = compareOperations(oldSpec, newSpec);
   const scan = await migrateSources(options, changes);
-  const report = { mode: options.write ? 'write' : 'preview', changes, ...scan };
+  const report = { mode: options.write ? 'write' : options.check ? 'check' : 'preview', changes, ...scan };
   if (options.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
   } else {
-    process.stdout.write(`${changes.length} operationId change(s), ${scan.matches.length} call site(s), ${scan.scannedFiles} file(s) scanned.\n`);
+    process.stdout.write(`${changes.length} operationId change(s), ${scan.matches.length} call site(s), ${scan.manualMatches.length} manual reference(s), ${scan.scannedFiles} file(s) scanned, ${scan.appliedFiles} file(s) written.\n`);
     for (const change of changes) {
       process.stdout.write(`${change.endpoint}: ${change.oldId} -> ${change.newId}${change.reason ? ` [manual: ${change.reason}]` : ''}\n`);
     }
     for (const match of scan.matches) {
       process.stdout.write(`  ${match.file}:${match.line} ${match.oldId} -> ${match.newId}\n`);
     }
+    for (const match of scan.manualMatches) {
+      process.stdout.write(`  ${match.file}:${match.line} ${match.oldId} -> ${match.newId} [manual: ${match.reason}]\n`);
+    }
     for (const error of scan.errors) process.stderr.write(`Skipped ${error.file}: ${error.message}\n`);
+    if (options.write && scan.errors.length) process.stderr.write('No files written because some files could not be parsed.\n');
     if (!options.write && scan.matches.length) process.stdout.write('Preview only. Pass --write to apply.\n');
   }
   if (scan.errors.length) process.exitCode = 2;
+  else if (options.check && (scan.matches.length || scan.manualMatches.length)) process.exitCode = 3;
 }
 
 main().catch(error => {
