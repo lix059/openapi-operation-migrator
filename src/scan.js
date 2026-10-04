@@ -3,6 +3,7 @@ import { extname, join, relative } from 'node:path';
 import { parse as parseJs } from '@babel/parser';
 import traverseModule from '@babel/traverse';
 import { parse as parseVue } from '@vue/compiler-sfc';
+import { createImportResolver } from './imports.js';
 
 const traverse = traverseModule.default ?? traverseModule;
 const EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.vue']);
@@ -27,22 +28,31 @@ function scriptParts(filename, source) {
     .map(block => ({ code: block.content, offset: block.loc.start.offset }));
 }
 
-function findUsages(code, offset, options, renames) {
-  const clientImports = new Set(options.clientImports ?? [options.clientImport]);
+function findUsages(code, offset, options, renames, filename, importResolver) {
   const ast = parseJs(code, {
     sourceType: 'unambiguous',
     plugins: ['typescript', 'jsx', 'decorators-legacy']
   });
   const edits = [];
   const manual = [];
-  function isConfiguredClient(path, object) {
+  function isConfiguredClient(path, object, seen = new Set()) {
+    if (['TSAsExpression', 'TSTypeAssertion', 'TSNonNullExpression', 'ParenthesizedExpression'].includes(object.type)) {
+      return isConfiguredClient(path, object.expression, seen);
+    }
     if (object.type === 'Identifier') {
       const binding = path.scope.getBinding(object.name);
-      if (!binding?.path.isImportSpecifier()) return false;
-      const importNode = binding.path.parentPath.node;
-      const imported = binding.path.node.imported;
-      return clientImports.has(importNode.source.value)
-        && (imported.name ?? imported.value) === options.clientExport;
+      if (!binding || seen.has(binding)) return false;
+      seen.add(binding);
+      if (binding.path.isImportSpecifier()) {
+        const importNode = binding.path.parentPath.node;
+        const imported = binding.path.node.imported;
+        return importResolver.resolveImport(filename, importNode.source.value, imported.name ?? imported.value);
+      }
+      if (binding.path.isVariableDeclarator() && binding.constant
+        && binding.path.parentPath.node.kind === 'const' && binding.path.node.init) {
+        return isConfiguredClient(binding.path, binding.path.node.init, seen);
+      }
+      return false;
     }
     if (!['MemberExpression', 'OptionalMemberExpression'].includes(object.type)) return false;
     if (object.object.type !== 'Identifier') return false;
@@ -51,10 +61,10 @@ function findUsages(code, offset, options, renames) {
       : !object.computed && object.property.type === 'Identifier'
         ? object.property.name
         : undefined;
-    if (exportName !== options.clientExport) return false;
+    if (!exportName) return false;
     const binding = path.scope.getBinding(object.object.name);
     return Boolean(binding?.path.isImportNamespaceSpecifier()
-      && clientImports.has(binding.path.parentPath.node.source.value));
+      && importResolver.resolveImport(filename, binding.path.parentPath.node.source.value, exportName));
   }
   function inspectMember(path) {
     const member = path.node;
@@ -91,6 +101,7 @@ function findUsages(code, offset, options, renames) {
 
 export async function migrateSources(options, changes) {
   const renames = new Map(changes.filter(change => !change.reason).map(change => [change.oldMethod, change]));
+  const importResolver = await createImportResolver(options);
   const files = await sourceFiles(options.src);
   const matches = [];
   const manualMatches = [];
@@ -100,7 +111,7 @@ export async function migrateSources(options, changes) {
     const source = await readFile(filename, 'utf8');
     let usages;
     try {
-      usages = scriptParts(filename, source).map(part => findUsages(part.code, part.offset, options, renames));
+      usages = scriptParts(filename, source).map(part => findUsages(part.code, part.offset, options, renames, filename, importResolver));
     } catch (error) {
       errors.push({ file: relative(options.src, filename), message: error.message });
       continue;

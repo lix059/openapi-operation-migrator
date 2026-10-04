@@ -1,6 +1,6 @@
 {
   "name": "openapi-operation-migrator",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Preview and safely migrate renamed OpenAPI operation calls in TypeScript and Vue projects",
   "type": "module",
   "bin": {
@@ -11,13 +11,14 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js && node --check src/report.js && node --check src/generators.js"
+    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js && node --check src/report.js && node --check src/generators.js && node --check src/imports.js"
   },
   "dependencies": {
     "@babel/parser": "^7.28.0",
     "@babel/traverse": "^7.28.0",
     "@vue/compiler-sfc": "^3.5.0",
     "camelcase": "6.3.0",
+    "typescript": "5.9.3",
     "yaml": "^2.8.0"
   },
   "license": "MIT",

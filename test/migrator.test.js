@@ -126,6 +126,78 @@ Other.listUsersOld();
   assert.match(updated, /Other\.listUsersOld\(\)/);
 });
 
+test('relative re-export chains and constant aliases resolve to the configured client', async () => {
+  const { src, old, next } = await fixture();
+  await writeFile(join(src, 'first.ts'), "export { AdminApi as InternalApi } from '@/api';\n");
+  await writeFile(join(src, 'second.ts'), "export { InternalApi as ClientApi } from './first';\n");
+  await writeFile(join(src, 'star.ts'), "export * from './second';\n");
+  const file = join(src, 'users.ts');
+  await writeFile(file, `import { ClientApi as Api } from './second';
+import * as Barrel from './second';
+import { ClientApi as StarApi } from './star';
+import { AdminApi as Other } from '@/other';
+const Alias = Api;
+const Nested = Barrel.ClientApi;
+let Mutable = Api;
+Mutable = Other;
+Alias.listUsersOld();
+Nested.listUsersOld();
+Barrel.ClientApi.listUsersOld();
+StarApi.listUsersOld();
+Mutable.listUsersOld();
+function shadow(Api) { return Api.listUsersOld(); }
+function localShadow(Barrel) { return Barrel.ClientApi.listUsersOld(); }
+function shadowedInitializer(Api) { return Alias.listUsersOld(); }
+`);
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  const result = await migrateSources({ src, clientImport: '@/api', clientExport: 'AdminApi', write: true }, changes);
+  assert.equal(result.matches.length, 5);
+  assert.deepEqual(result.errors, []);
+  const updated = await readFile(file, 'utf8');
+  assert.match(updated, /Alias\.listUsers\(\)/);
+  assert.match(updated, /Nested\.listUsers\(\)/);
+  assert.match(updated, /Barrel\.ClientApi\.listUsers\(\)/);
+  assert.match(updated, /StarApi\.listUsers\(\)/);
+  assert.match(updated, /function shadowedInitializer\(Api\) \{ return Alias\.listUsers\(\); \}/);
+  assert.match(updated, /Mutable\.listUsersOld\(\)/);
+  assert.match(updated, /function shadow\(Api\) \{ return Api\.listUsersOld\(\); \}/);
+  assert.match(updated, /function localShadow\(Barrel\) \{ return Barrel\.ClientApi\.listUsersOld\(\); \}/);
+});
+
+test('circular re-exports terminate and malformed barrels block writes', async () => {
+  const { src, old, next } = await fixture();
+  await writeFile(join(src, 'a.ts'), "export * from './b';\n");
+  await writeFile(join(src, 'b.ts'), "export * from './a';\n");
+  const file = join(src, 'users.ts');
+  await writeFile(file, "import { AdminApi } from './a';\nAdminApi.listUsersOld();\n");
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  const cycle = await migrateSources({ src, clientImport: '@/api', clientExport: 'AdminApi', write: true }, changes);
+  assert.equal(cycle.matches.length, 0);
+  assert.equal(cycle.appliedFiles, 0);
+
+  await writeFile(join(src, 'a.ts'), "export { AdminApi } from '@/api';\nconst broken = ;\n");
+  const malformed = await migrateSources({ src, clientImport: '@/api', clientExport: 'AdminApi', write: true }, changes);
+  assert.ok(malformed.errors.length);
+  assert.equal(malformed.appliedFiles, 0);
+  assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsersOld\(\)/);
+});
+
+test('tsconfig paths resolve non-relative barrel re-exports', async () => {
+  const { dir, src, old, next } = await fixture();
+  await writeFile(join(dir, 'tsconfig.json'), JSON.stringify({
+    compilerOptions: { baseUrl: '.', paths: { '@sdk/*': ['src/*'] } }
+  }));
+  await writeFile(join(src, 'barrel.ts'), "export { AdminApi as ClientApi } from '@/api';\n");
+  const file = join(src, 'users.ts');
+  await writeFile(file, "import { ClientApi } from '@sdk/barrel';\nClientApi.listUsersOld();\n");
+  const { stdout } = await execFileAsync(process.execPath, [
+    cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api',
+    '--tsconfig', join(dir, 'tsconfig.json'), '--write', '--json'
+  ]);
+  assert.equal(JSON.parse(stdout).matches.length, 1);
+  assert.match(await readFile(file, 'utf8'), /ClientApi\.listUsers\(\)/);
+});
+
 test('write aborts all files when a source file cannot be parsed', async () => {
   const { src, old, next } = await fixture();
   const valid = join(src, 'valid.ts');

@@ -1,5 +1,8 @@
+import { readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 function cell(value) {
   return String(value)
@@ -64,6 +67,7 @@ export function formatSarif(report, context) {
     runs: [{
       tool: { driver: {
         name: 'openapi-operation-migrator',
+        semanticVersion: version,
         rules: [
           { id: 'opid/rename-call', shortDescription: { text: 'Generated API method call needs renaming' } },
           { id: 'opid/manual-reference', shortDescription: { text: 'Generated API method reference needs review' } },

@@ -20,6 +20,7 @@ Options:
   --sarif               Print SARIF 2.1.0 diagnostics
   --github              Print GitHub Actions workflow annotations
   --repo-root DIR       Repository root for SARIF/annotations (default: cwd)
+  --tsconfig FILE       Resolve import aliases and re-exports using tsconfig paths
   --help                Show this help
 
 Only calls on the configured named or namespace import are changed.
@@ -31,7 +32,8 @@ function parseArgs(argv) {
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-export', 'clientExport'],
-    ['--method-map', 'methodMap'], ['--generator', 'generator'], ['--repo-root', 'repoRoot']
+    ['--method-map', 'methodMap'], ['--generator', 'generator'], ['--repo-root', 'repoRoot'],
+    ['--tsconfig', 'tsconfig']
   ]);
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -60,6 +62,7 @@ function parseArgs(argv) {
   options.new = resolve(options.new);
   options.src = resolve(options.src);
   if (options.methodMap) options.methodMap = resolve(options.methodMap);
+  if (options.tsconfig) options.tsconfig = resolve(options.tsconfig);
   options.repoRoot = resolve(options.repoRoot ?? process.cwd());
   return options;
 }

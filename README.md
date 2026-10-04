@@ -62,10 +62,11 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--sarif` | Emit SARIF 2.1.0 diagnostics for code scanning |
 | `--github` | Emit GitHub Actions workflow annotations |
 | `--repo-root DIR` | Repository root for SARIF/annotations; defaults to current directory |
+| `--tsconfig FILE` | Resolve barrel imports using TypeScript `baseUrl`/`paths` |
 
 An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Namespace imports are supported too: `import * as Service from '@/api'` followed by `Service.AdminApi.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported. The scanner uses import bindings, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
 
-For an explicit barrel import, repeat the import option: `--client-import '@/api' --client-import '@/api/barrel'`. This declares both paths as trusted sources of the same `--client-export`; the tool does not inspect the barrel's re-export chain.
+Relative barrel re-export chains are traced automatically, including renamed exports and a single `export *` source. Pass `--tsconfig tsconfig.json` to resolve path aliases using the project's TypeScript configuration. Constant aliases such as `const Api = AdminApi` are traced in their declaration scope. Mutable aliases are left alone. If a non-relative barrel path is not resolvable through `tsconfig`, repeat the import option: `--client-import '@/api' --client-import '@/api/barrel'`. This declares both paths as trusted sources of the same `--client-export`.
 
 If your generator changes operation IDs into different method names, pass a map covering the old and new IDs:
 
@@ -86,7 +87,7 @@ For [`openapi-typescript-codegen` 0.31](https://github.com/ferdikoomen/openapi-t
 - Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
 - Local and external file Path Item references are resolved relative to the document containing each reference. HTTP(S) references require `--allow-remote-refs` and are limited to 5 MiB and 10 seconds per document. Circular and unresolved references fail explicitly.
 - Duplicated or reused `operationId` values are reported as manual changes.
-- Only method calls on the configured named or namespace import are edited. Dynamic computed properties and indirect aliases are outside this release. Re-export paths must be declared explicitly with repeated `--client-import` options.
+- Only method calls on a verified named, namespace, or constant alias binding are edited. Dynamic computed properties, mutable aliases, and non-relative re-export paths that were not explicitly declared are outside this release.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
 - Preview first, run on a clean Git working tree, and review the diff after `--write`.
 
