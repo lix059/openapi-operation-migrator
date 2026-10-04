@@ -4,8 +4,16 @@ on:
   push:
   pull_request:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
+    timeout-minutes: 10
     runs-on: ubuntu-latest
     strategy:
       matrix:
@@ -19,3 +27,4 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm test
+      - run: npm run test:package

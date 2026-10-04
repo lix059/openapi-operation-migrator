@@ -1,6 +1,6 @@
 {
   "name": "openapi-operation-migrator",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Preview and safely migrate renamed OpenAPI operation calls in TypeScript and Vue projects",
   "type": "module",
   "bin": {
@@ -11,7 +11,8 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js && node --check src/report.js && node --check src/generators.js && node --check src/imports.js"
+    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js && node --check src/report.js && node --check src/generators.js && node --check src/imports.js",
+    "test:package": "node scripts/package-smoke.js"
   },
   "dependencies": {
     "@babel/parser": "^7.28.0",
@@ -28,5 +29,12 @@
     "ROADMAP.md",
     "CONTRIBUTING.md",
     "LICENSE"
-  ]
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lix059/openapi-operation-migrator.git"
+  },
+  "bugs": {
+    "url": "https://github.com/lix059/openapi-operation-migrator/issues"
+  }
 }

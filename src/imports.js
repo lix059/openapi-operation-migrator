@@ -70,10 +70,10 @@ export async function createImportResolver(options) {
       if (localVisited.has(localName)) return false;
       localVisited.add(localName);
       for (const statement of body) {
-        if (statement.type === 'ImportDeclaration') {
+        if (statement.type === 'ImportDeclaration' && statement.importKind !== 'type') {
           for (const specifier of statement.specifiers) {
             if (specifier.local.name !== localName) continue;
-            if (specifier.type === 'ImportSpecifier') {
+            if (specifier.type === 'ImportSpecifier' && specifier.importKind !== 'type') {
               return resolveImport(file, statement.source.value, exportedName(specifier.imported), currentVisited);
             }
           }
@@ -106,12 +106,14 @@ export async function createImportResolver(options) {
     for (const statement of body) {
       if (statement.type === 'ExportNamedDeclaration') {
         if (statement.declaration?.type === 'VariableDeclaration') {
-          if (statement.declaration.declarations.some(item => item.id.type === 'Identifier' && item.id.name === name) && resolveLocal(name)) return true;
+          if (statement.declaration.declarations.some(item => item.id.type === 'Identifier' && item.id.name === name)) return resolveLocal(name);
         }
+        if (statement.declaration?.id?.name === name) return false;
         for (const specifier of statement.specifiers) {
           if (specifier.type !== 'ExportSpecifier' || exportedName(specifier.exported) !== name) continue;
+          if (statement.exportKind === 'type' || specifier.exportKind === 'type') return false;
           const sourceName = exportedName(specifier.local);
-          if (statement.source ? resolveImport(file, statement.source.value, sourceName, currentVisited) : resolveLocal(sourceName)) return true;
+          return statement.source ? resolveImport(file, statement.source.value, sourceName, currentVisited) : resolveLocal(sourceName);
         }
       }
     }

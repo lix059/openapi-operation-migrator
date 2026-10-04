@@ -102,3 +102,16 @@ npm test
 ```
 
 See [ROADMAP.md](ROADMAP.md) for planned compatibility work and [CONTRIBUTING.md](CONTRIBUTING.md) for reporting or contributing. Use synthetic API schemas and source files when reporting bugs; avoid posting private application code or credentials.
+
+## Release verification
+
+`npm ci && npm run check && npm test && npm run test:package` checks syntax,
+binding-aware migrations, CLI exit codes and installation of the actual npm tarball.
+Supported runtimes are Node.js 20 and later; CI targets 20, 22 and 24.
+The CLI is distributed from this repository; it has not been published to npm.
+
+Migration is static analysis, not a full TypeScript semantic proof. Dynamic property
+names, runtime client mutation, Vue template calls and multiple star re-exports
+are outside the supported scope. Back up or commit source before using `--write`:
+parse failures stop all writes, but filesystem failures during writing may leave
+partially updated files. Review the diff and run your application's checks.

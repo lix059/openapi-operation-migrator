@@ -32,3 +32,16 @@ This project focuses on a specific problem: a generated API method changes name 
 - Package a reusable GitHub Action if consumers need one.
 
 Each compatibility addition should include a small synthetic fixture that fails before the change and passes afterward. Feature requests are most useful when they include the generator, the import statement, an old call, and the expected new call.
+
+## Engineering acceptance (0.2.1)
+
+- [x] Regression coverage for explicit export precedence and ESM/CJS extensions.
+- [x] Clean up generated test fixtures.
+- [x] Install and execute the packed distribution in an isolated directory.
+- [x] Lock dependencies, publish repository metadata, restrict CI token permissions.
+- [x] Bound CI runtime and cancel superseded runs.
+- [x] Document static-analysis boundaries and partial-write recovery.
+
+Remote CI execution is currently blocked by the repository owner's GitHub billing
+lock. Local checks are reproducible; remote passing status is not asserted.
+Possible extensions above are outside this completed release scope.

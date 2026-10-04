@@ -1,6 +1,6 @@
-import test from 'node:test';
+import test, { after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { mkdtemp, mkdir, readFile, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
@@ -15,8 +15,12 @@ import { generatorMethodMap } from '../src/generators.js';
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
 
+const fixtureDirs = [];
+after(async () => { await Promise.all(fixtureDirs.map(dir => rm(dir, { recursive: true, force: true }))); });
+
 async function fixture() {
   const dir = await mkdtemp(join(tmpdir(), 'opid-migrate-'));
+  fixtureDirs.push(dir);
   const src = join(dir, 'src');
   await mkdir(src);
   const old = join(dir, 'old.yaml');
@@ -466,4 +470,33 @@ test('check mode fails on ambiguous IDs but accepts an unchanged generated metho
   await writeFile(methodMap, JSON.stringify({ listUsersOld: 'listUsers', listUsers: 'listUsers' }));
   const { stdout } = await execFileAsync(process.execPath, [...args, '--method-map', methodMap]);
   assert.equal(JSON.parse(stdout).changes[0].reason, 'generated method name is unchanged');
+});
+
+
+test('explicit exports override a trusted export star without rewriting unrelated calls', async () => {
+  const { src, old, next } = await fixture();
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  for (const declaration of [
+    'export const AdminApi = {};',
+    'const replacement = {}; export { replacement as AdminApi };',
+    "export { Other as AdminApi } from './other';",
+    'export class AdminApi {}'
+  ]) {
+    await writeFile(join(src, 'barrel.ts'), `export * from '@/api'; ${declaration}`);
+    await writeFile(join(src, 'other.ts'), 'export const Other = {};');
+    await writeFile(join(src, 'consumer.ts'), "import { AdminApi } from './barrel'; AdminApi.listUsersOld();");
+    const report = await migrateSources({ src, clientImport: '@/api', clientExport: 'AdminApi', write: true }, changes);
+    assert.equal(report.matches.length, 0, declaration);
+    assert.equal(report.appliedFiles, 0);
+  }
+});
+
+test('scans ESM and CommonJS module extensions', async () => {
+  const { src, old, next } = await fixture();
+  for (const extension of ['mts', 'cts', 'mjs', 'cjs']) {
+    await writeFile(join(src, `consumer.${extension}`), "import { AdminApi } from '@/api'; AdminApi.listUsersOld();");
+  }
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  const report = await migrateSources({ src, clientImport: '@/api', clientExport: 'AdminApi' }, changes);
+  assert.equal(report.matches.length, 4);
 });

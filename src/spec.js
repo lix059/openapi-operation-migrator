@@ -65,7 +65,7 @@ function resolvePointer(document, fragment, location) {
   if (!pointer.startsWith('/')) throw new Error(`${displayLocation(location)}: unsupported reference fragment`);
   const segments = pointer.slice(1).split('/').map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
   let target = document;
-  for (const segment of segments) target = target?.[segment];
+  for (const segment of segments) target = target && Object.hasOwn(target, segment) ? target[segment] : undefined;
   if (!target || typeof target !== 'object') {
     throw new Error(`${displayLocation(location)}: unresolved path-item reference`);
   }
@@ -96,7 +96,7 @@ export async function loadOperations(file, options = {}) {
   if (!spec || typeof spec !== 'object' || !String(spec.openapi ?? '').startsWith('3.')) {
     throw new Error(`${file} must be an OpenAPI 3 document`);
   }
-  if (!spec.paths || typeof spec.paths !== 'object') {
+  if (!spec.paths || typeof spec.paths !== 'object' || Array.isArray(spec.paths)) {
     throw new Error(`${file} has no paths object`);
   }
 

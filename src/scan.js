@@ -6,7 +6,7 @@ import { parse as parseVue } from '@vue/compiler-sfc';
 import { createImportResolver } from './imports.js';
 
 const traverse = traverseModule.default ?? traverseModule;
-const EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.vue']);
+const EXTENSIONS = new Set(['.js', '.jsx', '.ts', '.tsx', '.mts', '.cts', '.mjs', '.cjs', '.vue']);
 const IGNORE_DIRS = new Set(['.git', 'node_modules', 'dist', 'build', 'coverage']);
 
 async function sourceFiles(dir) {
@@ -45,6 +45,7 @@ function findUsages(code, offset, options, renames, filename, importResolver) {
       seen.add(binding);
       if (binding.path.isImportSpecifier()) {
         const importNode = binding.path.parentPath.node;
+        if (importNode.importKind === 'type' || binding.path.node.importKind === 'type') return false;
         const imported = binding.path.node.imported;
         return importResolver.resolveImport(filename, importNode.source.value, imported.name ?? imported.value);
       }
@@ -64,6 +65,7 @@ function findUsages(code, offset, options, renames, filename, importResolver) {
     if (!exportName) return false;
     const binding = path.scope.getBinding(object.object.name);
     return Boolean(binding?.path.isImportNamespaceSpecifier()
+      && binding.path.parentPath.node.importKind !== 'type'
       && importResolver.resolveImport(filename, binding.path.parentPath.node.source.value, exportName));
   }
   function inspectMember(path) {
