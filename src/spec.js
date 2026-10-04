@@ -1,33 +1,98 @@
 import { readFile } from 'node:fs/promises';
+import { resolve } from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import YAML from 'yaml';
 
 const METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
+const MAX_REMOTE_BYTES = 5 * 1024 * 1024;
 
-function resolvePathItem(spec, pathItem, file, visited = new Set()) {
+function displayLocation(location) {
+  return location.protocol === 'file:' ? fileURLToPath(location) : `${location.origin}${location.pathname}`;
+}
+
+async function readRemote(location) {
+  const response = await fetch(location, { signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new Error(`${displayLocation(location)}: HTTP ${response.status}`);
+  const reader = response.body.getReader();
+  const chunks = [];
+  let size = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    size += value.byteLength;
+    if (size > MAX_REMOTE_BYTES) {
+      await reader.cancel();
+      throw new Error(`${displayLocation(location)}: remote document exceeds 5 MiB`);
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
+async function loadDocument(location, context) {
+  const documentUrl = new URL(location);
+  documentUrl.hash = '';
+  const key = documentUrl.href;
+  if (!context.cache.has(key)) {
+    context.cache.set(key, (async () => {
+      let contents;
+      if (documentUrl.protocol === 'file:') {
+        contents = await readFile(fileURLToPath(documentUrl), 'utf8');
+      } else if (['http:', 'https:'].includes(documentUrl.protocol) && context.allowRemoteRefs) {
+        contents = await readRemote(documentUrl);
+      } else {
+        throw new Error(`${displayLocation(documentUrl)}: remote references require --allow-remote-refs`);
+      }
+      try {
+        return YAML.parse(contents, { uniqueKeys: true });
+      } catch (error) {
+        throw new Error(`Cannot parse ${displayLocation(documentUrl)}: ${error.message}`);
+      }
+    })());
+  }
+  return context.cache.get(key);
+}
+
+function resolvePointer(document, fragment, location) {
+  if (!fragment || fragment === '#') return document;
+  const pointer = decodeURIComponent(fragment.slice(1));
+  if (!pointer.startsWith('/')) throw new Error(`${displayLocation(location)}: unsupported reference fragment`);
+  const segments = pointer.slice(1).split('/').map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+  let target = document;
+  for (const segment of segments) target = target?.[segment];
+  if (!target || typeof target !== 'object') {
+    throw new Error(`${displayLocation(location)}: unresolved path-item reference`);
+  }
+  return target;
+}
+
+async function resolvePathItem(pathItem, location, context, visited = new Set()) {
   if (!pathItem || typeof pathItem !== 'object') return pathItem;
   const ref = pathItem.$ref;
   if (typeof ref !== 'string') return pathItem;
   if (Object.keys(pathItem).some(key => METHODS.has(key.toLowerCase()))) {
-    throw new Error(`${file}: path-item reference has sibling operations: ${ref}`);
+    throw new Error(`${displayLocation(location)}: path-item reference has sibling operations: ${ref}`);
   }
-  if (!ref.startsWith('#/')) throw new Error(`${file}: external path-item reference is unsupported: ${ref}`);
-  if (visited.has(ref)) throw new Error(`${file}: circular path-item reference: ${ref}`);
-  visited.add(ref);
-  const segments = ref.slice(2).split('/').map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
-  let target = spec;
-  for (const segment of segments) target = target?.[segment];
-  if (!target || typeof target !== 'object') throw new Error(`${file}: unresolved path-item reference: ${ref}`);
-  return resolvePathItem(spec, target, file, visited);
+  const targetLocation = new URL(ref, location);
+  if (visited.has(targetLocation.href)) {
+    throw new Error(`${displayLocation(targetLocation)}: circular path-item reference`);
+  }
+  visited.add(targetLocation.href);
+  const document = await loadDocument(targetLocation, context);
+  const target = resolvePointer(document, targetLocation.hash, targetLocation);
+  return resolvePathItem(target, targetLocation, context, visited);
 }
 
-export async function loadOperations(file) {
-  const contents = await readFile(file, 'utf8');
-  let spec;
-  try {
-    spec = YAML.parse(contents, { uniqueKeys: true });
-  } catch (error) {
-    throw new Error(`Cannot parse ${file}: ${error.message}`);
-  }
+export async function loadOperations(file, options = {}) {
+  const location = pathToFileURL(resolve(file));
+  const context = { cache: new Map(), allowRemoteRefs: options.allowRemoteRefs ?? false };
+  const spec = await loadDocument(location, context);
   if (!spec || typeof spec !== 'object' || !String(spec.openapi ?? '').startsWith('3.')) {
     throw new Error(`${file} must be an OpenAPI 3 document`);
   }
@@ -38,7 +103,7 @@ export async function loadOperations(file) {
   const operations = new Map();
   const ids = new Map();
   for (const [path, rawPathItem] of Object.entries(spec.paths)) {
-    const pathItem = resolvePathItem(spec, rawPathItem, file);
+    const pathItem = await resolvePathItem(rawPathItem, location, context);
     if (!pathItem || typeof pathItem !== 'object') continue;
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!METHODS.has(method.toLowerCase())) continue;

@@ -53,6 +53,7 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--client-import NAME` | Exact module specifier used in source imports; repeat for multiple paths |
 | `--client-export NAME` | Named export with methods; defaults to `AdminApi` |
 | `--method-map FILE` | Optional JSON map from operation IDs to generated method names |
+| `--allow-remote-refs` | Allow HTTP(S) Path Item references from OpenAPI documents |
 | `--write` | Apply safe renames; omitted by default |
 | `--check` | Check for pending calls and set a CI-friendly exit code |
 | `--json` | Emit machine-readable report |
@@ -77,7 +78,7 @@ Use `--method-map method-map.json`. IDs absent from the map keep their original 
 
 - Operations are paired by the same HTTP method and path. Path or method migrations require manual review.
 - Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
-- Local path-item references are resolved. External and circular path-item references fail explicitly.
+- Local and external file Path Item references are resolved relative to the document containing each reference. HTTP(S) references require `--allow-remote-refs` and are limited to 5 MiB and 10 seconds per document. Circular and unresolved references fail explicitly.
 - Duplicated or reused `operationId` values are reported as manual changes.
 - Only method calls on the configured named or namespace import are edited. Dynamic computed properties and indirect aliases are outside this release. Re-export paths must be declared explicitly with repeated `--client-import` options.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.

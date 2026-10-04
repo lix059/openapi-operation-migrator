@@ -10,6 +10,7 @@ Options:
   --client-import NAME  Allowed import path; repeat for barrels/re-exports
   --client-export NAME  Named export containing the API methods (default: AdminApi)
   --method-map FILE     JSON map from operationId to generated method name
+  --allow-remote-refs  Fetch HTTP(S) path-item references in the OpenAPI files
   --write               Apply safe call-site renames (default: preview only)
   --check               Exit 3 if method usages still need migration; for CI
   --json                Print machine-readable JSON
@@ -21,7 +22,7 @@ Operations are matched by HTTP method and path. Review generated API code before
 `;
 
 function parseArgs(argv) {
-  const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false };
+  const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false, allowRemoteRefs: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-export', 'clientExport'],
@@ -30,8 +31,8 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help') return { help: true };
-    if (arg === '--write' || arg === '--check' || arg === '--json' || arg === '--markdown') {
-      options[arg.slice(2)] = true;
+    if (['--write', '--check', '--json', '--markdown', '--allow-remote-refs'].includes(arg)) {
+      options[arg === '--allow-remote-refs' ? 'allowRemoteRefs' : arg.slice(2)] = true;
     } else if (arg === '--client-import') {
       const value = argv[++index];
       if (!value || value.startsWith('--')) throw new Error(`${arg} requires a value`);
@@ -61,8 +62,8 @@ async function main() {
     process.stdout.write(HELP);
     return;
   }
-  const oldSpec = await loadOperations(options.old);
-  const newSpec = await loadOperations(options.new);
+  const oldSpec = await loadOperations(options.old, options);
+  const newSpec = await loadOperations(options.new, options);
   const methodMap = options.methodMap ? await loadMethodMap(options.methodMap) : new Map();
   const changes = compareOperations(oldSpec, newSpec, methodMap);
   const scan = await migrateSources(options, changes);

@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { createServer } from 'node:http';
 import { compareOperations, loadMethodMap, loadOperations } from '../src/spec.js';
 import { migrateSources } from '../src/scan.js';
 import { formatMarkdown } from '../src/report.js';
@@ -188,7 +189,7 @@ test('colliding mapped method names require manual review', () => {
   assert.match(changes[0].reason, /shared/);
 });
 
-test('local path-item references are resolved and external references fail explicitly', async () => {
+test('local path-item references and external files resolve relative to their own document', async () => {
   const { dir } = await fixture();
   const local = join(dir, 'local.yaml');
   await writeFile(local, `openapi: 3.1.0
@@ -213,7 +214,17 @@ paths:
   /users:
     $ref: './paths.yaml#/Users'
 `);
-  await assert.rejects(loadOperations(external), /external path-item reference is unsupported/);
+  await writeFile(join(dir, 'paths.yaml'), `Users:
+  $ref: './nested.yaml#/Items/Users'
+`);
+  await writeFile(join(dir, 'nested.yaml'), `Items:
+  Users:
+    get:
+      operationId: externalUsers
+      responses: { '200': { description: OK } }
+`);
+  const externalOperations = await loadOperations(external);
+  assert.equal(externalOperations.operations.get('GET /users'), 'externalUsers');
 
   const circular = join(dir, 'circular.yaml');
   await writeFile(circular, `openapi: 3.1.0
@@ -227,6 +238,30 @@ components:
       $ref: '#/paths/~1users'
 `);
   await assert.rejects(loadOperations(circular), /circular path-item reference/);
+});
+
+test('HTTP path-item references require opt-in and use a bounded fetch', async () => {
+  const { dir } = await fixture();
+  const server = createServer((_request, response) => {
+    response.setHeader('content-type', 'application/yaml');
+    response.end("Users:\n  get:\n    operationId: remoteUsers\n    responses: { '200': { description: OK } }\n");
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const spec = join(dir, 'remote.yaml');
+    const port = server.address().port;
+    await writeFile(spec, `openapi: 3.1.0
+info: { title: Demo, version: 1.0.0 }
+paths:
+  /users:
+    $ref: 'http://127.0.0.1:${port}/path.yaml#/Users'
+`);
+    await assert.rejects(loadOperations(spec), /--allow-remote-refs/);
+    const operations = await loadOperations(spec, { allowRemoteRefs: true });
+    assert.equal(operations.operations.get('GET /users'), 'remoteUsers');
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
 });
 
 test('CLI returns a JSON report and leaves source untouched by default', async () => {

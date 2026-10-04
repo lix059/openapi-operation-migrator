@@ -9,7 +9,7 @@ This project focuses on a specific problem: a generated API method changes name 
 - Report ambiguous IDs and indirect method references for manual review.
 - Stop all writes if a source file fails to parse; provide `--check` for CI.
 - Accept an explicit operation ID to generated method map for generators that rename methods.
-- Resolve local path-item references and fail explicitly on external or circular references.
+- Resolve local and external Path Item references with document-relative paths and cycle detection; require opt-in for HTTP(S).
 - Support namespace imports with binding-aware analysis.
 - Produce a Markdown report with source locations for pull requests and build artifacts.
 - Accept multiple explicit client import paths for projects using barrel re-exports.
@@ -18,7 +18,7 @@ This project focuses on a specific problem: a generated API method changes name 
 
 1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
 2. **More import shapes:** resolve barrel re-export chains and indirect aliases with binding-aware analysis, while keeping unrelated or shadowed names untouched.
-3. **External OpenAPI references:** load referenced documents with a clear base path and cycle policy.
+3. **External OpenAPI references:** complete. Expand other reference object types only if operation matching needs them.
 4. **CI output:** produce SARIF diagnostics and optional pull-request annotations.
 
 Each compatibility addition should include a small synthetic fixture that fails before the change and passes afterward. Feature requests are most useful when they include the generator, the import statement, an old call, and the expected new call.
