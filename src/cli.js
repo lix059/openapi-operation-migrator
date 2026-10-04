@@ -2,6 +2,7 @@
 import { resolve } from 'node:path';
 import { loadOperations, loadMethodMap, compareOperations } from './spec.js';
 import { migrateSources } from './scan.js';
+import { formatMarkdown } from './report.js';
 
 const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --client-import @/api [options]
 
@@ -11,14 +12,15 @@ Options:
   --write               Apply safe call-site renames (default: preview only)
   --check               Exit 3 if method usages still need migration; for CI
   --json                Print machine-readable JSON
+  --markdown            Print a Markdown report for pull requests
   --help                Show this help
 
-Only calls on a named import are changed, for example AdminApi.oldMethod().
+Only calls on the configured named or namespace import are changed.
 Operations are matched by HTTP method and path. Review generated API code before --write.
 `;
 
 function parseArgs(argv) {
-  const options = { clientExport: 'AdminApi', write: false, check: false, json: false };
+  const options = { clientExport: 'AdminApi', write: false, check: false, json: false, markdown: false };
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-import', 'clientImport'], ['--client-export', 'clientExport'],
@@ -27,7 +29,7 @@ function parseArgs(argv) {
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
     if (arg === '--help') return { help: true };
-    if (arg === '--write' || arg === '--check' || arg === '--json') {
+    if (arg === '--write' || arg === '--check' || arg === '--json' || arg === '--markdown') {
       options[arg.slice(2)] = true;
     } else if (valued.has(arg)) {
       const value = argv[++index];
@@ -41,6 +43,7 @@ function parseArgs(argv) {
     if (!options[key]) throw new Error(`Missing --${key === 'clientImport' ? 'client-import' : key}`);
   }
   if (options.write && options.check) throw new Error('--write and --check cannot be combined');
+  if (options.json && options.markdown) throw new Error('--json and --markdown cannot be combined');
   options.old = resolve(options.old);
   options.new = resolve(options.new);
   options.src = resolve(options.src);
@@ -62,13 +65,18 @@ async function main() {
   const report = { mode: options.write ? 'write' : options.check ? 'check' : 'preview', changes, ...scan };
   if (options.json) {
     process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
+  } else if (options.markdown) {
+    process.stdout.write(formatMarkdown(report));
   } else {
     process.stdout.write(`${changes.length} operationId change(s), ${scan.matches.length} call site(s), ${scan.manualMatches.length} manual reference(s), ${scan.scannedFiles} file(s) scanned, ${scan.appliedFiles} file(s) written.\n`);
     for (const change of changes) {
       const methodLabel = change.oldId !== change.oldMethod || change.newId !== change.newMethod
         ? ` (client: ${change.oldMethod} -> ${change.newMethod})`
         : '';
-      process.stdout.write(`${change.endpoint}: ${change.oldId} -> ${change.newId}${methodLabel}${change.reason ? ` [manual: ${change.reason}]` : ''}\n`);
+      const status = change.reason === 'generated method name is unchanged'
+        ? ' [no client rename needed]'
+        : change.reason ? ` [manual: ${change.reason}]` : '';
+      process.stdout.write(`${change.endpoint}: ${change.oldId} -> ${change.newId}${methodLabel}${status}\n`);
     }
     for (const match of scan.matches) {
       process.stdout.write(`  ${match.file}:${match.line} ${match.oldMethod} -> ${match.newMethod}\n`);
@@ -81,7 +89,10 @@ async function main() {
     if (!options.write && scan.matches.length) process.stdout.write('Preview only. Pass --write to apply.\n');
   }
   if (scan.errors.length) process.exitCode = 2;
-  else if (options.check && (scan.matches.length || scan.manualMatches.length)) process.exitCode = 3;
+  else if (options.check && (
+    scan.matches.length || scan.manualMatches.length
+    || changes.some(change => change.reason && change.reason !== 'generated method name is unchanged')
+  )) process.exitCode = 3;
 }
 
 main().catch(error => {

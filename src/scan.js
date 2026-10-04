@@ -34,21 +34,36 @@ function findUsages(code, offset, options, renames) {
   });
   const edits = [];
   const manual = [];
+  function isConfiguredClient(path, object) {
+    if (object.type === 'Identifier') {
+      const binding = path.scope.getBinding(object.name);
+      if (!binding?.path.isImportSpecifier()) return false;
+      const importNode = binding.path.parentPath.node;
+      const imported = binding.path.node.imported;
+      return importNode.source.value === options.clientImport
+        && (imported.name ?? imported.value) === options.clientExport;
+    }
+    if (!['MemberExpression', 'OptionalMemberExpression'].includes(object.type)) return false;
+    if (object.object.type !== 'Identifier') return false;
+    const exportName = object.computed && object.property.type === 'StringLiteral'
+      ? object.property.value
+      : !object.computed && object.property.type === 'Identifier'
+        ? object.property.name
+        : undefined;
+    if (exportName !== options.clientExport) return false;
+    const binding = path.scope.getBinding(object.object.name);
+    return Boolean(binding?.path.isImportNamespaceSpecifier()
+      && binding.path.parentPath.node.source.value === options.clientImport);
+  }
   function inspectMember(path) {
     const member = path.node;
-    if (member.object.type !== 'Identifier') return;
     if (member.computed && member.property.type !== 'StringLiteral') return;
     if (!member.computed && member.property.type !== 'Identifier') return;
     const oldMethod = member.computed ? member.property.value : member.property.name;
     const change = renames.get(oldMethod);
     if (!change) return;
 
-    const binding = path.scope.getBinding(member.object.name);
-    if (!binding || !binding.path.isImportSpecifier()) return;
-    const importNode = binding.path.parentPath.node;
-    if (importNode.source.value !== options.clientImport) return;
-    const imported = binding.path.node.imported;
-    if ((imported.name ?? imported.value) !== options.clientExport) return;
+    if (!isConfiguredClient(path, member.object)) return;
 
     const usage = {
       start: offset + member.property.start + (member.computed ? 1 : 0),

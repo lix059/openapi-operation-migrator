@@ -11,7 +11,7 @@
   },
   "scripts": {
     "test": "node --test",
-    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js"
+    "check": "node --check src/cli.js && node --check src/spec.js && node --check src/scan.js && node --check src/report.js"
   },
   "dependencies": {
     "@babel/parser": "^7.28.0",

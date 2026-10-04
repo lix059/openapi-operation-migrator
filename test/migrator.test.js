@@ -8,6 +8,7 @@ import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
 import { compareOperations, loadMethodMap, loadOperations } from '../src/spec.js';
 import { migrateSources } from '../src/scan.js';
+import { formatMarkdown } from '../src/report.js';
 
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
@@ -79,6 +80,27 @@ await AdminApi.listUsersOld();
   const updatedVue = await readFile(vue, 'utf8');
   assert.match(updatedVue, /await AdminApi\.listUsers\(\)/);
   assert.match(updatedVue, /<div>listUsersOld<\/div>/);
+});
+
+test('namespace imports migrate only the configured export and preserve shadowed names', async () => {
+  const { src, old, next } = await fixture();
+  const file = join(src, 'namespace.ts');
+  await writeFile(file, `import * as Service from '@/api';
+Service.AdminApi.listUsersOld();
+Service['AdminApi']['listUsersOld']();
+Service.OtherApi.listUsersOld();
+function shadow(Service) { Service.AdminApi.listUsersOld(); }
+`);
+  const changes = compareOperations(await loadOperations(old), await loadOperations(next));
+  const result = await migrateSources({
+    src, clientImport: '@/api', clientExport: 'AdminApi', write: true
+  }, changes);
+  assert.equal(result.matches.length, 2);
+  const updated = await readFile(file, 'utf8');
+  assert.match(updated, /Service\.AdminApi\.listUsers\(\)/);
+  assert.match(updated, /Service\['AdminApi'\]\['listUsers'\]\(\)/);
+  assert.match(updated, /Service\.OtherApi\.listUsersOld\(\)/);
+  assert.match(updated, /function shadow\(Service\) \{ Service\.AdminApi\.listUsersOld\(\); \}/);
 });
 
 test('write aborts all files when a source file cannot be parsed', async () => {
@@ -245,4 +267,40 @@ test('CLI write followed by check passes once direct calls are migrated', async 
   assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsers\(\)/);
   const check = await execFileAsync(process.execPath, [...args, '--check', '--json']);
   assert.equal(JSON.parse(check.stdout).matches.length, 0);
+});
+
+test('Markdown report includes source locations and escapes table content', async () => {
+  const { src, old, next } = await fixture();
+  await writeFile(join(src, 'users.ts'), "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  const { stdout } = await execFileAsync(process.execPath, [
+    cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api', '--markdown'
+  ]);
+  assert.match(stdout, /\| users\.ts \| 2 \| listUsersOld → listUsers \| Direct call \|/);
+  const escaped = formatMarkdown({
+    mode: 'preview',
+    changes: [{ endpoint: 'GET /a|b', oldId: 'old', newId: 'new', oldMethod: 'old', newMethod: 'new' }],
+    matches: [], manualMatches: [], errors: [], appliedFiles: 0
+  });
+  assert.match(escaped, /GET \/a\\\|b/);
+});
+
+test('check mode fails on ambiguous IDs but accepts an unchanged generated method name', async () => {
+  const { dir, src, old, next } = await fixture();
+  const oldText = await readFile(old, 'utf8');
+  await writeFile(old, `${oldText}  /other:\n    get:\n      operationId: listUsers\n`);
+  const nextText = await readFile(next, 'utf8');
+  await writeFile(next, `${nextText}  /other:\n    get:\n      operationId: listUsers\n`);
+  const args = [cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api', '--check', '--json'];
+  await assert.rejects(execFileAsync(process.execPath, args), error => {
+    assert.equal(error.code, 3);
+    assert.match(JSON.parse(error.stdout).changes[0].reason, /duplicated/);
+    return true;
+  });
+
+  await writeFile(old, oldText);
+  await writeFile(next, nextText);
+  const methodMap = join(dir, 'same-method.json');
+  await writeFile(methodMap, JSON.stringify({ listUsersOld: 'listUsers', listUsers: 'listUsers' }));
+  const { stdout } = await execFileAsync(process.execPath, [...args, '--method-map', methodMap]);
+  assert.equal(JSON.parse(stdout).changes[0].reason, 'generated method name is unchanged');
 });

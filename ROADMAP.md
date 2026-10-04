@@ -10,12 +10,14 @@ This project focuses on a specific problem: a generated API method changes name 
 - Stop all writes if a source file fails to parse; provide `--check` for CI.
 - Accept an explicit operation ID to generated method map for generators that rename methods.
 - Resolve local path-item references and fail explicitly on external or circular references.
+- Support namespace imports with binding-aware analysis.
+- Produce a Markdown report with source locations for pull requests and build artifacts.
 
 ## Next priorities
 
 1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
-2. **More import shapes:** support namespace imports and re-exports with binding-aware analysis, while keeping unrelated or shadowed names untouched.
+2. **More import shapes:** support re-exports and indirect aliases with binding-aware analysis, while keeping unrelated or shadowed names untouched.
 3. **External OpenAPI references:** load referenced documents with a clear base path and cycle policy.
-4. **CI output:** produce a compact Markdown or SARIF report with source locations, suitable for pull requests.
+4. **CI output:** produce SARIF diagnostics and optional pull-request annotations.
 
 Each compatibility addition should include a small synthetic fixture that fails before the change and passes afterward. Feature requests are most useful when they include the generator, the import statement, an old call, and the expected new call.

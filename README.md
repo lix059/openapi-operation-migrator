@@ -26,9 +26,9 @@ GET /users: getUserListOld -> getUserList
 
 Review the report and the newly generated client method, then add `--write`. Run the project's typecheck and tests after applying changes.
 
-Install from this repository with `npm install -g .` to use `opid-migrate` as a command. For automation, add `--json` to get the report as JSON.
+Install from this repository with `npm install -g .` to use `opid-migrate` as a command. For automation, add `--json` to get the report as JSON, or `--markdown` to produce a report for a pull request or build artifact.
 
-To fail a CI step when matching method usages still use old names, use `--check`. It exits 3 when migration is pending, 2 when a source file cannot be parsed, and 1 for invalid input or another fatal error. A clean check exits 0. `--check` never edits files and cannot be combined with `--write`.
+To fail a CI step when matching method usages still use old names or the specification has ambiguous renames, use `--check`. It exits 3 when migration or manual review is pending, 2 when a source file cannot be parsed, and 1 for invalid input or another fatal error. A clean check exits 0. An operation ID change that leaves the generated method name unchanged does not fail the check. `--check` never edits files and cannot be combined with `--write`.
 
 For example, after your own API generation step in CI:
 
@@ -40,6 +40,8 @@ opid-migrate \
   --client-import '@/api' \
   --check
 ```
+
+Add `--markdown > migration-report.md` to save a reviewable report. The command keeps the same exit codes when Markdown output is selected.
 
 ## Options
 
@@ -54,8 +56,9 @@ opid-migrate \
 | `--write` | Apply safe renames; omitted by default |
 | `--check` | Check for pending calls and set a CI-friendly exit code |
 | `--json` | Emit machine-readable report |
+| `--markdown` | Emit a Markdown report; cannot be combined with `--json` |
 
-An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported too. The scanner uses the import binding, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
+An import alias is supported: `import { AdminApi as Api } from '@/api'` followed by `Api.oldMethod()`. Namespace imports are supported too: `import * as Service from '@/api'` followed by `Service.AdminApi.oldMethod()`. Optional calls and string-literal member calls such as `Api['oldMethod']()` are supported. The scanner uses import bindings, so calls on unrelated objects and locally shadowed names are left alone. A method reference such as `const load = Api.oldMethod` is reported under `manualMatches` for context-specific review. If any source file cannot be parsed, `--write` leaves all files untouched and exits 2.
 
 If your generator changes operation IDs into different method names, pass a map covering the old and new IDs:
 
@@ -74,7 +77,7 @@ Use `--method-map method-map.json`. IDs absent from the map keep their original 
 - Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
 - Local path-item references are resolved. External and circular path-item references fail explicitly.
 - Duplicated or reused `operationId` values are reported as manual changes.
-- Only method calls on the configured named import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
+- Only method calls on the configured named or namespace import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.
 - Preview first, run on a clean Git working tree, and review the diff after `--write`.
 
