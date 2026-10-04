@@ -3,6 +3,23 @@ import YAML from 'yaml';
 
 const METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 
+function resolvePathItem(spec, pathItem, file, visited = new Set()) {
+  if (!pathItem || typeof pathItem !== 'object') return pathItem;
+  const ref = pathItem.$ref;
+  if (typeof ref !== 'string') return pathItem;
+  if (Object.keys(pathItem).some(key => METHODS.has(key.toLowerCase()))) {
+    throw new Error(`${file}: path-item reference has sibling operations: ${ref}`);
+  }
+  if (!ref.startsWith('#/')) throw new Error(`${file}: external path-item reference is unsupported: ${ref}`);
+  if (visited.has(ref)) throw new Error(`${file}: circular path-item reference: ${ref}`);
+  visited.add(ref);
+  const segments = ref.slice(2).split('/').map(segment => segment.replace(/~1/g, '/').replace(/~0/g, '~'));
+  let target = spec;
+  for (const segment of segments) target = target?.[segment];
+  if (!target || typeof target !== 'object') throw new Error(`${file}: unresolved path-item reference: ${ref}`);
+  return resolvePathItem(spec, target, file, visited);
+}
+
 export async function loadOperations(file) {
   const contents = await readFile(file, 'utf8');
   let spec;
@@ -20,7 +37,8 @@ export async function loadOperations(file) {
 
   const operations = new Map();
   const ids = new Map();
-  for (const [path, pathItem] of Object.entries(spec.paths)) {
+  for (const [path, rawPathItem] of Object.entries(spec.paths)) {
+    const pathItem = resolvePathItem(spec, rawPathItem, file);
     if (!pathItem || typeof pathItem !== 'object') continue;
     for (const [method, operation] of Object.entries(pathItem)) {
       if (!METHODS.has(method.toLowerCase())) continue;

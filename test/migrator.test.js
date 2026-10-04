@@ -145,6 +145,47 @@ test('colliding mapped method names require manual review', () => {
   assert.match(changes[0].reason, /shared/);
 });
 
+test('local path-item references are resolved and external references fail explicitly', async () => {
+  const { dir } = await fixture();
+  const local = join(dir, 'local.yaml');
+  await writeFile(local, `openapi: 3.1.0
+info: { title: Demo, version: 1.0.0 }
+paths:
+  /users:
+    $ref: '#/components/pathItems/Users'
+components:
+  pathItems:
+    Users:
+      get:
+        operationId: listUsers
+        responses: { '200': { description: OK } }
+`);
+  const operations = await loadOperations(local);
+  assert.equal(operations.operations.get('GET /users'), 'listUsers');
+
+  const external = join(dir, 'external.yaml');
+  await writeFile(external, `openapi: 3.1.0
+info: { title: Demo, version: 1.0.0 }
+paths:
+  /users:
+    $ref: './paths.yaml#/Users'
+`);
+  await assert.rejects(loadOperations(external), /external path-item reference is unsupported/);
+
+  const circular = join(dir, 'circular.yaml');
+  await writeFile(circular, `openapi: 3.1.0
+info: { title: Demo, version: 1.0.0 }
+paths:
+  /users:
+    $ref: '#/components/pathItems/Users'
+components:
+  pathItems:
+    Users:
+      $ref: '#/paths/~1users'
+`);
+  await assert.rejects(loadOperations(circular), /circular path-item reference/);
+});
+
 test('CLI returns a JSON report and leaves source untouched by default', async () => {
   const { src, old, next } = await fixture();
   const file = join(src, 'users.ts');

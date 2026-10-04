@@ -72,6 +72,7 @@ Use `--method-map method-map.json`. IDs absent from the map keep their original 
 
 - Operations are paired by the same HTTP method and path. Path or method migrations require manual review.
 - Without `--method-map`, the tool assumes each generated method has the exact `operationId` name.
+- Local path-item references are resolved. External and circular path-item references fail explicitly.
 - Duplicated or reused `operationId` values are reported as manual changes.
 - Only method calls on the configured named import are edited. Dynamic computed properties, re-exports, and indirect aliases are outside this release.
 - The tool does not regenerate your API client. Confirm the new method exists before applying edits.

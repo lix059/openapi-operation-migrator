@@ -9,12 +9,13 @@ This project focuses on a specific problem: a generated API method changes name 
 - Report ambiguous IDs and indirect method references for manual review.
 - Stop all writes if a source file fails to parse; provide `--check` for CI.
 - Accept an explicit operation ID to generated method map for generators that rename methods.
+- Resolve local path-item references and fail explicitly on external or circular references.
 
 ## Next priorities
 
 1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
 2. **More import shapes:** support namespace imports and re-exports with binding-aware analysis, while keeping unrelated or shadowed names untouched.
-3. **OpenAPI references:** resolve local path-item references and report unsupported external references explicitly.
+3. **External OpenAPI references:** load referenced documents with a clear base path and cycle policy.
 4. **CI output:** produce a compact Markdown or SARIF report with source locations, suitable for pull requests.
 
 Each compatibility addition should include a small synthetic fixture that fails before the change and passes afterward. Feature requests are most useful when they include the generator, the import statement, an old call, and the expected new call.
