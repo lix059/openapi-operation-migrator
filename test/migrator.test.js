@@ -10,6 +10,7 @@ import { createServer } from 'node:http';
 import { compareOperations, loadMethodMap, loadOperations } from '../src/spec.js';
 import { migrateSources } from '../src/scan.js';
 import { formatMarkdown } from '../src/report.js';
+import { generatorMethodMap } from '../src/generators.js';
 
 const execFileAsync = promisify(execFile);
 const cli = fileURLToPath(new URL('../src/cli.js', import.meta.url));
@@ -173,6 +174,26 @@ test('method map connects generator-specific names to operation IDs', async () =
   ]);
   assert.equal(JSON.parse(stdout).appliedFiles, 1);
   assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsers\(\)/);
+});
+
+test('openapi-typescript-codegen 0.31 adapter derives names without a JSON map', async () => {
+  const { src, old, next } = await fixture();
+  await writeFile(old, (await readFile(old, 'utf8')).replace('listUsersOld', 'list_users_old'));
+  await writeFile(next, (await readFile(next, 'utf8')).replace('listUsers', 'list_users'));
+  const file = join(src, 'users.ts');
+  await writeFile(file, "import { AdminApi } from '@/api';\nAdminApi.listUsersOld();\n");
+  const oldSpec = await loadOperations(old);
+  const newSpec = await loadOperations(next);
+  const map = generatorMethodMap('openapi-typescript-codegen@0.31', oldSpec, newSpec);
+  assert.equal(map.get('list_users_old'), 'listUsersOld');
+  assert.equal(map.get('list_users'), 'listUsers');
+  const { stdout } = await execFileAsync(process.execPath, [
+    cli, '--old', old, '--new', next, '--src', src, '--client-import', '@/api',
+    '--generator', 'openapi-typescript-codegen@0.31', '--write', '--json'
+  ]);
+  assert.equal(JSON.parse(stdout).appliedFiles, 1);
+  assert.match(await readFile(file, 'utf8'), /AdminApi\.listUsers\(\)/);
+  assert.throws(() => generatorMethodMap('unknown', oldSpec, newSpec), /Unsupported generator/);
 });
 
 test('colliding mapped method names require manual review', () => {

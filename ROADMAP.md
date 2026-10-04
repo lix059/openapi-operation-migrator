@@ -14,10 +14,11 @@ This project focuses on a specific problem: a generated API method changes name 
 - Produce a Markdown report with source locations for pull requests and build artifacts.
 - Accept multiple explicit client import paths for projects using barrel re-exports.
 - Produce SARIF 2.1.0 and GitHub Actions annotations for pending migrations.
+- Derive generated method names for openapi-typescript-codegen 0.31 from its naming rule.
 
 ## Next priorities
 
-1. **Generator adapters:** derive the method map from supported generator configurations instead of maintaining JSON by hand.
+1. **Generator adapters:** complete for openapi-typescript-codegen 0.31. Add other pinned generator versions from verified naming rules.
 2. **More import shapes:** resolve barrel re-export chains and indirect aliases with binding-aware analysis, while keeping unrelated or shadowed names untouched.
 3. **External OpenAPI references:** complete. Expand other reference object types only if operation matching needs them.
 4. **CI output:** complete. Provide a reusable action only if projects need one.

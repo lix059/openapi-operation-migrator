@@ -53,6 +53,7 @@ Add `--markdown > migration-report.md` to save a reviewable report. The command 
 | `--client-import NAME` | Exact module specifier used in source imports; repeat for multiple paths |
 | `--client-export NAME` | Named export with methods; defaults to `AdminApi` |
 | `--method-map FILE` | Optional JSON map from operation IDs to generated method names |
+| `--generator NAME` | Derive names using a supported generator naming rule |
 | `--allow-remote-refs` | Allow HTTP(S) Path Item references from OpenAPI documents |
 | `--write` | Apply safe renames; omitted by default |
 | `--check` | Check for pending calls and set a CI-friendly exit code |
@@ -76,6 +77,8 @@ If your generator changes operation IDs into different method names, pass a map 
 ```
 
 Use `--method-map method-map.json`. IDs absent from the map keep their original names. The tool reports method-name collisions for manual review.
+
+For [`openapi-typescript-codegen` 0.31](https://github.com/ferdikoomen/openapi-typescript-codegen/blob/main/src/openApi/v3/parser/getOperationName.ts), use `--generator openapi-typescript-codegen@0.31` instead of maintaining a map. The adapter applies that version's explicit `operationId` naming rule. If your project customizes generated names, add `--method-map`; its entries override the adapter. Other generator versions are not assumed compatible.
 
 ## Safety boundaries
 

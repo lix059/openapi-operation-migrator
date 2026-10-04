@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { loadOperations, loadMethodMap, compareOperations } from './spec.js';
 import { migrateSources } from './scan.js';
 import { formatGitHubAnnotations, formatMarkdown, formatSarif } from './report.js';
+import { generatorMethodMap } from './generators.js';
 
 const HELP = `Usage: opid-migrate --old old.yaml --new new.yaml --src ./src --client-import @/api [options]
 
@@ -10,6 +11,7 @@ Options:
   --client-import NAME  Allowed import path; repeat for barrels/re-exports
   --client-export NAME  Named export containing the API methods (default: AdminApi)
   --method-map FILE     JSON map from operationId to generated method name
+  --generator NAME      Use a supported generator's naming rule
   --allow-remote-refs  Fetch HTTP(S) path-item references in the OpenAPI files
   --write               Apply safe call-site renames (default: preview only)
   --check               Exit 3 if method usages still need migration; for CI
@@ -29,7 +31,7 @@ function parseArgs(argv) {
   const valued = new Map([
     ['--old', 'old'], ['--new', 'new'], ['--src', 'src'],
     ['--client-export', 'clientExport'],
-    ['--method-map', 'methodMap'], ['--repo-root', 'repoRoot']
+    ['--method-map', 'methodMap'], ['--generator', 'generator'], ['--repo-root', 'repoRoot']
   ]);
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -70,7 +72,10 @@ async function main() {
   }
   const oldSpec = await loadOperations(options.old, options);
   const newSpec = await loadOperations(options.new, options);
-  const methodMap = options.methodMap ? await loadMethodMap(options.methodMap) : new Map();
+  const methodMap = options.generator ? generatorMethodMap(options.generator, oldSpec, newSpec) : new Map();
+  if (options.methodMap) {
+    for (const [id, method] of await loadMethodMap(options.methodMap)) methodMap.set(id, method);
+  }
   const changes = compareOperations(oldSpec, newSpec, methodMap);
   const scan = await migrateSources(options, changes);
   const report = { mode: options.write ? 'write' : options.check ? 'check' : 'preview', changes, ...scan };
